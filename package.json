@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint src",
     "type-check": "tsc --noEmit",
@@ -15,7 +15,8 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:prod": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "db:seed": "ts-node prisma/seed.ts"
+    "db:seed": "ts-node prisma/seed.ts",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
@@ -42,7 +43,7 @@
     "typescript": "^5"
   },
   "allowScripts": {
-    "@prisma/client@6.19.3": true,
+    "@prisma/client@7.10.0": true,
     "prisma@7.10.0": true,
     "@prisma/engines@7.10.0": true,
     "unrs-resolver@1.12.2": true

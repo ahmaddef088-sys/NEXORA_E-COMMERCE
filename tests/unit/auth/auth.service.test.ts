@@ -34,9 +34,6 @@ import {
 } from '@/lib/services/auth.service';
 import { verifyToken } from '@/lib/auth/jwt';
 
-// Type assertion for mocked prisma
-const mockPrisma = prisma as jest.Mocked<typeof prisma>;
-
 describe('Auth service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -61,10 +58,8 @@ describe('Auth service', () => {
     };
 
     it('creates a user and returns a safe user + token', async () => {
-      // @ts-expect-error — mock
-      mockPrisma.user.findUnique.mockResolvedValue(null);
-      // @ts-expect-error — mock
-      mockPrisma.user.create.mockResolvedValue(mockCreatedUser);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.user.create as jest.Mock).mockResolvedValue(mockCreatedUser);
 
       const result = await register(validInput);
 
@@ -74,10 +69,8 @@ describe('Auth service', () => {
     });
 
     it('does not return passwordHash or salt in the response', async () => {
-      // @ts-expect-error — mock
-      mockPrisma.user.findUnique.mockResolvedValue(null);
-      // @ts-expect-error — mock
-      mockPrisma.user.create.mockResolvedValue(mockCreatedUser);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.user.create as jest.Mock).mockResolvedValue(mockCreatedUser);
 
       const result = await register(validInput);
 
@@ -86,10 +79,8 @@ describe('Auth service', () => {
     });
 
     it('issues a valid JWT in the token', async () => {
-      // @ts-expect-error — mock
-      mockPrisma.user.findUnique.mockResolvedValue(null);
-      // @ts-expect-error — mock
-      mockPrisma.user.create.mockResolvedValue(mockCreatedUser);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.user.create as jest.Mock).mockResolvedValue(mockCreatedUser);
 
       const result = await register(validInput);
 
@@ -101,8 +92,7 @@ describe('Auth service', () => {
     });
 
     it('throws ConflictError if email already exists', async () => {
-      // @ts-expect-error — mock
-      mockPrisma.user.findUnique.mockResolvedValue(mockCreatedUser);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(mockCreatedUser);
 
       await expect(register(validInput)).rejects.toMatchObject({
         code: 'CONFLICT',
@@ -111,14 +101,12 @@ describe('Auth service', () => {
     });
 
     it('hashes the password (never stores plaintext)', async () => {
-      // @ts-expect-error — mock
-      mockPrisma.user.findUnique.mockResolvedValue(null);
-      // @ts-expect-error — mock
-      mockPrisma.user.create.mockResolvedValue(mockCreatedUser);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.user.create as jest.Mock).mockResolvedValue(mockCreatedUser);
 
       await register(validInput);
 
-      const createCall = (mockPrisma.user.create as jest.Mock).mock.calls[0][0];
+      const createCall = (prisma.user.create as jest.Mock).mock.calls[0][0];
       expect(createCall.data.passwordHash).toBeDefined();
       expect(createCall.data.passwordHash).not.toBe(validInput.password);
       expect(createCall.data.salt).toBeDefined();
@@ -135,8 +123,7 @@ describe('Auth service', () => {
       const salt = generateSalt();
       const passwordHash = hashPassword('correct-password', salt);
 
-      // @ts-expect-error — mock
-      mockPrisma.user.findUnique.mockResolvedValue({
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
         id: 'user-456',
         email: 'bob@example.com',
         name: 'Bob',
@@ -160,8 +147,7 @@ describe('Auth service', () => {
       const salt = generateSalt();
       const passwordHash = hashPassword('correct-password', salt);
 
-      // @ts-expect-error — mock
-      mockPrisma.user.findUnique.mockResolvedValue({
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
         id: 'user-456',
         email: 'bob@example.com',
         name: 'Bob',
@@ -181,8 +167,7 @@ describe('Auth service', () => {
     });
 
     it('throws UnauthorizedError for non-existent email (prevents user enumeration)', async () => {
-      // @ts-expect-error — mock
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(
         login({ email: 'nobody@example.com', password: 'any-password' })
@@ -198,8 +183,7 @@ describe('Auth service', () => {
 
   describe('getCurrentUser', () => {
     it('returns a safe user without passwordHash', async () => {
-      // @ts-expect-error — mock
-      mockPrisma.user.findUnique.mockResolvedValue({
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue({
         id: 'user-789',
         email: 'carol@example.com',
         name: 'Carol',
@@ -216,8 +200,7 @@ describe('Auth service', () => {
     });
 
     it('returns null for non-existent user', async () => {
-      // @ts-expect-error — mock
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
 
       const user = await getCurrentUser('non-existent');
       expect(user).toBeNull();
