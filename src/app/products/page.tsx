@@ -36,60 +36,98 @@ interface PaginationMeta {
   totalPages: number;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ALLOWED_SORT_FIELDS = ['name', 'price', 'createdAt', 'stock'] as const;
+const ALLOWED_SORT_ORDERS = ['asc', 'desc'] as const;
+const DEFAULT_SORT = 'createdAt:desc';
+
+/**
+ * The API rejects invalid params with a 400. Sanitize them on the client so a
+ * stale or hand-edited URL falls back to the default catalog instead of an empty grid.
+ */
+function parseSort(raw: string | null): { sortBy: string; sortOrder: string; value: string } {
+  const [sortBy, sortOrder] = (raw ?? DEFAULT_SORT).split(':');
+  const validField = (ALLOWED_SORT_FIELDS as readonly string[]).includes(sortBy);
+  const validOrder = (ALLOWED_SORT_ORDERS as readonly string[]).includes(sortOrder);
+  if (!validField || !validOrder) {
+    return { sortBy: 'createdAt', sortOrder: 'desc', value: DEFAULT_SORT };
+  }
+  return { sortBy, sortOrder, value: `${sortBy}:${sortOrder}` };
+}
+
+function parsePositiveNumber(raw: string | null): string {
+  if (!raw) return '';
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? raw : '';
+}
+
 function ProductsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useLanguage();
 
   const currentSearch = searchParams.get('search') ?? '';
-  const currentCategory = searchParams.get('categoryId') ?? '';
-  const currentSort = searchParams.get('sort') ?? 'createdAt:desc';
-  const currentMinPrice = searchParams.get('minPrice') ?? '';
-  const currentMaxPrice = searchParams.get('maxPrice') ?? '';
+  const rawCategory = searchParams.get('categoryId') ?? '';
+  const currentCategory = UUID_PATTERN.test(rawCategory) ? rawCategory : '';
+  const { sortBy, sortOrder, value: currentSort } = parseSort(searchParams.get('sort'));
+  const currentMinPrice = parsePositiveNumber(searchParams.get('minPrice'));
+  const currentMaxPrice = parsePositiveNumber(searchParams.get('maxPrice'));
   const currentInStock = searchParams.get('inStock') === 'true';
-  const currentPage = parseInt(searchParams.get('page') ?? '1', 10);
+  const parsedPage = parseInt(searchParams.get('page') ?? '1', 10);
+  const currentPage = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [meta, setMeta] = useState<PaginationMeta>({ page: 1, limit: 12, total: 0, totalPages: 1 });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [searchInput, setSearchInput] = useState(currentSearch);
   const [, startTransition] = useTransition();
 
-  // Load categories
+  // Load categories (non-critical: failure only empties the filter dropdown)
   useEffect(() => {
-    fetch('/api/categories')
-      .then((res) => res.json())
+    fetch('/api/categories', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
       .then((json) => {
-        if (json.success) setCategories(json.data ?? []);
+        if (json?.success) setCategories(json.data ?? []);
       })
-      .catch(() => {});
+      .catch((err) => console.error('Failed to load categories', err));
   }, []);
 
   // Fetch products whenever params change
   useEffect(() => {
     let ignore = false;
-    const [sortBy, sortOrder] = currentSort.split(':');
     const params = new URLSearchParams();
     if (currentSearch) params.set('search', currentSearch);
     if (currentCategory) params.set('categoryId', currentCategory);
     if (currentMinPrice) params.set('minPrice', currentMinPrice);
     if (currentMaxPrice) params.set('maxPrice', currentMaxPrice);
     if (currentInStock) params.set('inStock', 'true');
-    if (sortBy) params.set('sortBy', sortBy);
-    if (sortOrder) params.set('sortOrder', sortOrder);
+    params.set('sortBy', sortBy);
+    params.set('sortOrder', sortOrder);
     params.set('page', String(currentPage));
     params.set('limit', '12');
 
-    fetch(`/api/products?${params.toString()}`)
-      .then((res) => res.json())
-      .then((json) => {
-        if (!ignore && json.success) {
-          setProducts(json.data ?? []);
+    fetch(`/api/products?${params.toString()}`, { cache: 'no-store' })
+      .then(async (res) => {
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success || !Array.isArray(json.data)) {
+          throw new Error(`Products request failed with status ${res.status}`);
+        }
+        if (!ignore) {
+          setProducts(json.data);
           if (json.meta) setMeta(json.meta);
+          setLoadError(false);
         }
       })
-      .catch((err) => console.error(err))
+      .catch((err) => {
+        console.error('Failed to load products', err);
+        if (!ignore) {
+          setProducts([]);
+          setLoadError(true);
+        }
+      })
       .finally(() => {
         if (!ignore) setLoading(false);
       });
@@ -97,7 +135,17 @@ function ProductsContent() {
     return () => {
       ignore = true;
     };
-  }, [currentSearch, currentCategory, currentSort, currentMinPrice, currentMaxPrice, currentInStock, currentPage]);
+  }, [
+    currentSearch,
+    currentCategory,
+    sortBy,
+    sortOrder,
+    currentMinPrice,
+    currentMaxPrice,
+    currentInStock,
+    currentPage,
+    reloadKey,
+  ]);
 
   const updateFilters = (newParams: Record<string, string | null>) => {
     setLoading(true);
@@ -253,6 +301,31 @@ function ProductsContent() {
           {Array.from({ length: 8 }).map((_, i) => (
             <ProductSkeleton key={i} />
           ))}
+        </div>
+      ) : loadError ? (
+        <div
+          className="card"
+          role="alert"
+          style={{
+            textAlign: 'center',
+            padding: 'var(--space-16)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <p style={{ color: 'var(--text-primary)', marginBottom: 'var(--space-6)' }}>
+            {t('catalog.loadError')}
+          </p>
+          <button
+            type="button"
+            id="products-retry"
+            className="btn btn-outline"
+            onClick={() => {
+              setLoading(true);
+              setReloadKey((k) => k + 1);
+            }}
+          >
+            {t('catalog.retry')}
+          </button>
         </div>
       ) : products.length > 0 ? (
         <>

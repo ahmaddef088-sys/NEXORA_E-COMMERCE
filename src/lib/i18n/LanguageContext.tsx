@@ -15,18 +15,26 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 const COOKIE_NAME = 'nexora_locale';
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(() => {
-    if (typeof window === 'undefined') return 'ar';
+  const [locale, setLocaleState] = useState<Locale>('ar');
+
+  useEffect(() => {
     const saved = localStorage.getItem(COOKIE_NAME) as Locale | null;
+    let targetLocale: Locale | null = null;
     if (saved && (saved === 'en' || saved === 'ar')) {
-      return saved;
+      targetLocale = saved;
+    } else {
+      const match = document.cookie.match(new RegExp(`(?:^|; )${COOKIE_NAME}=([^;]*)`));
+      if (match && (match[1] === 'en' || match[1] === 'ar')) {
+        targetLocale = match[1] as Locale;
+      }
     }
-    const match = document.cookie.match(new RegExp(`(?:^|; )${COOKIE_NAME}=([^;]*)`));
-    if (match && (match[1] === 'en' || match[1] === 'ar')) {
-      return match[1] as Locale;
+
+    if (targetLocale && targetLocale !== 'ar') {
+      queueMicrotask(() => {
+        setLocaleState(targetLocale);
+      });
     }
-    return 'ar';
-  });
+  }, []);
 
   const setLocale = (newLocale: Locale) => {
     setLocaleState(newLocale);

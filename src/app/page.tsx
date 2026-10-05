@@ -35,102 +35,94 @@ export default function HomePage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [productsError, setProductsError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    let ignore = false;
+
     async function loadData() {
-      try {
-        const [catRes, prodRes] = await Promise.all([
-          fetch('/api/categories'),
-          fetch('/api/products?limit=8&sortBy=createdAt&sortOrder=desc'),
-        ]);
+      setLoading(true);
+      setProductsError(false);
 
-        if (catRes.ok) {
-          const catJson = await catRes.json();
-          setCategories(catJson.data?.slice(0, 6) ?? []);
-        }
+      // Categories are non-critical for the homepage: failure just hides the section.
+      const categoriesPromise = fetch('/api/categories', { cache: 'no-store' })
+        .then(async (res) => {
+          if (!res.ok) return;
+          const catJson = await res.json();
+          if (!ignore && catJson.success) {
+            setCategories(catJson.data?.slice(0, 6) ?? []);
+          }
+        })
+        .catch((err) => console.error('Failed to load categories', err));
 
-        if (prodRes.ok) {
-          const prodJson = await prodRes.json();
-          setFeaturedProducts(prodJson.data ?? []);
-        }
-      } catch (err) {
-        console.error('Failed to load homepage data', err);
-      } finally {
-        setLoading(false);
-      }
+      const productsPromise = fetch('/api/products?limit=8&sortBy=createdAt&sortOrder=desc', {
+        cache: 'no-store',
+      })
+        .then(async (res) => {
+          const prodJson = await res.json().catch(() => null);
+          if (!res.ok || !prodJson?.success || !Array.isArray(prodJson.data)) {
+            throw new Error(`Products request failed with status ${res.status}`);
+          }
+          if (!ignore) setFeaturedProducts(prodJson.data);
+        })
+        .catch((err) => {
+          console.error('Failed to load products', err);
+          if (!ignore) {
+            setFeaturedProducts([]);
+            setProductsError(true);
+          }
+        });
+
+      await Promise.all([categoriesPromise, productsPromise]);
+      if (!ignore) setLoading(false);
     }
 
     loadData();
-  }, []);
+    return () => {
+      ignore = true;
+    };
+  }, [reloadKey]);
 
   return (
     <div>
       {/* ── 1. Store Commercial Hero Banner ────────────────────────────────── */}
-      <section
-        style={{
-          backgroundColor: 'var(--bg-surface)',
-          paddingTop: 'var(--space-12)',
-          paddingBottom: 'var(--space-12)',
-          borderBottom: '1px solid var(--border-color)',
-        }}
-      >
-        <div className="container" style={{ textAlign: 'center' }}>
-          <span
-            style={{
-              display: 'inline-block',
-              padding: '4px 12px',
-              borderRadius: 'var(--border-radius-sm)',
-              backgroundColor: 'var(--bg-elevated)',
-              border: '1px solid var(--border-color)',
-              color: 'var(--color-brand-primary)',
-              fontSize: 'var(--font-size-xs)',
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              marginBottom: 'var(--space-4)',
-            }}
-          >
-            {t('hero.badge')}
-          </span>
+      <section className="hero-banner-section">
+        <div className="container">
+          <div className="hero-banner-grid">
+            <div className="hero-banner-content">
+              <span className="hero-badge">
+                {t('hero.badge')}
+              </span>
 
-          <h1
-            className="heading-hero"
-            style={{
-              maxWidth: '820px',
-              marginInline: 'auto',
-              marginBottom: 'var(--space-4)',
-            }}
-          >
-            {t('hero.title')}
-          </h1>
+              <h1 className="heading-hero hero-title">
+                {t('hero.title')}
+              </h1>
 
-          <p
-            style={{
-              fontSize: 'var(--font-size-base)',
-              color: 'var(--text-secondary)',
-              maxWidth: '600px',
-              marginInline: 'auto',
-              marginBottom: 'var(--space-8)',
-              lineHeight: 1.6,
-            }}
-          >
-            {t('hero.subtitle')}
-          </p>
+              <p className="hero-subtitle">
+                {t('hero.subtitle')}
+              </p>
 
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 'var(--space-3)',
-              justifyContent: 'center',
-            }}
-          >
-            <Link href="/products" className="btn btn-primary btn-lg">
-              {t('hero.exploreBtn')} →
-            </Link>
-            <Link href="/categories" className="btn btn-secondary btn-lg">
-              {t('hero.categoriesBtn')}
-            </Link>
+              <div className="hero-actions">
+                <Link href="/products" className="btn btn-primary btn-lg">
+                  {t('hero.exploreBtn')} →
+                </Link>
+                <Link href="/categories" className="btn btn-secondary btn-lg">
+                  {t('hero.categoriesBtn')}
+                </Link>
+              </div>
+            </div>
+
+            <div className="hero-banner-image-container">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/nexora-hero.png"
+                alt={t('hero.title')}
+                width={1024}
+                height={576}
+                className="hero-banner-image"
+              />
+            </div>
           </div>
         </div>
       </section>
@@ -300,6 +292,28 @@ export default function HomePage() {
               {Array.from({ length: 4 }).map((_, i) => (
                 <ProductSkeleton key={i} />
               ))}
+            </div>
+          ) : productsError ? (
+            <div
+              className="card"
+              role="alert"
+              style={{
+                textAlign: 'center',
+                padding: 'var(--space-12)',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              <p style={{ fontSize: 'var(--font-size-base)', marginBottom: 'var(--space-4)' }}>
+                {t('catalog.loadError')}
+              </p>
+              <button
+                type="button"
+                id="home-products-retry"
+                className="btn btn-outline btn-sm"
+                onClick={() => setReloadKey((k) => k + 1)}
+              >
+                {t('catalog.retry')}
+              </button>
             </div>
           ) : featuredProducts.length > 0 ? (
             <div className="grid-products">
